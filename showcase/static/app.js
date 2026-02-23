@@ -26,11 +26,13 @@ const terminalEl = document.getElementById('terminal');
 let isCalibrating = false;
 let currentFocus = 0.5;
 let continuousLoad = 0.0;
+let timerInterval = null; // Single global interval to prevent clashing
 
 // 1. Calibration Logic
 startCalibBtn.addEventListener('click', () => {
     socket.emit('request_calibration', {});
     showCalibrationPhase('INIT');
+    log('Calibration requested. Communicating with engine...', 'sys');
 });
 
 recalibBtn.addEventListener('click', () => {
@@ -41,18 +43,21 @@ recalibBtn.addEventListener('click', () => {
 
 socket.on('calib_status', (data) => {
     const state = data.state;
+    console.log("Calibration event received:", state, data);
+
     if (state === 'PREP') {
         showCalibrationPhase('INIT');
         startTimer(data.countdown, 'PREPARING', 'Get ready! Calibration starting soon...');
     } else if (state === 'REST') {
         startTimer(data.duration, 'REST', 'Keep your eyes closed and body still.');
-        log('Recording REST baseline...', 'eng');
+        log('Recording REST baseline initialized.', 'eng');
     } else if (state === 'PREP_FOCUS') {
         startTimer(data.countdown, 'SWITCHING', 'Get ready for active focus phase...');
     } else if (state === 'FOCUS') {
         startTimer(data.duration, 'FOCUS', 'Focus intensely on math or a fixed point.');
-        log('Recording ACTIVE FOCUS...', 'eng');
+        log('Recording ACTIVE FOCUS initialized.', 'eng');
     } else if (state === 'DONE') {
+        if (timerInterval) clearInterval(timerInterval);
         calibOverlay.classList.add('hidden');
         log('Neural Alignment Complete. Classifier Integrated.', 'sys');
         lslStatusEl.innerText = 'CALIBRATED';
@@ -69,6 +74,8 @@ function showCalibrationPhase(phase) {
 }
 
 function startTimer(duration, phase, task) {
+    if (timerInterval) clearInterval(timerInterval);
+
     phaseNameEl.innerText = phase;
     phaseInstructionEl.innerText = task;
 
@@ -84,11 +91,13 @@ function startTimer(duration, phase, task) {
         calibProgressBar.style.width = '100%';
     }, 50);
 
-    const interval = setInterval(() => {
+    timerInterval = setInterval(() => {
         timeLeft--;
-        calibTimerEl.innerText = timeLeft;
+        if (timeLeft >= 0) {
+            calibTimerEl.innerText = timeLeft;
+        }
         if (timeLeft <= 0) {
-            clearInterval(interval);
+            clearInterval(timerInterval);
         }
     }, 1000);
 }
