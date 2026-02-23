@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telos Reflex | Neural Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+</head>
+
+<body class="theme-dark">
+    <div class="bg-mesh"></div>
+    <div class="scanline"></div>
+
+    <!-- Calibration Overlay -->
+    <div id="calib-overlay" class="overlay hidden">
+        <div class="calib-card glass">
+            <div class="calib-header">
+                <div class="orb small pulse-blue"></div>
+                <h2>Neural Alignment</h2>
+            </div>
+
+            <div id="calib-content" class="calib-body">
+                <p class="instruction">Synchronization required to establish baseline.</p>
+                <button id="start-calib-btn" class="btn primary">Start Calibration</button>
+            </div>
+
+            <div id="calib-active" class="calib-body hidden">
+                <div class="phase-indicator">
+                    <span id="phase-name">REST</span>
+                    <div class="timer" id="calib-timer">10</div>
+                </div>
+                <div class="progress-container">
+                    <div id="calib-progress-bar" class="progress-fill"></div>
+                </div>
+                <p id="phase-instruction" class="sub-instruction">Close your eyes and relax...</p>
+            </div>
+        </div>
+    </div>
+
+    <main class="app-shell">
+        <nav class="top-nav glass">
+            <div class="brand">
+                <div class="logo"></div>
+                <div class="brand-text">
+                    <span class="t-telos">TELOS</span>
+                    <span class="t-reflex">REFLEX</span>
+                </div>
+            </div>
+
+            <div class="nav-metrics">
+                <div class="metric">
+                    <span class="label">CORE</span>
+                    <span class="val green">STABLE</span>
+                </div>
+                <div class="metric">
+                    <span class="label">LSL</span>
+                    <span id="lsl-status" class="val dim">WAITING</span>
+                </div>
+                <button id="recalib-btn" class="btn outline small">Recalibrate</button>
+            </div>
+        </nav>
+
+        <div class="dashboard-grid">
+            <!-- Focus Monitoring -->
+            <div class="card focus-card glass">
+                <div class="card-header">
+                    <h3>COGNITIVE FOCUS</h3>
+                    <div class="live-tag"><span class="dot"></span> LIVE</div>
+                </div>
+
+                <div class="gauge-wrapper">
+                    <svg class="focus-gauge" viewBox="0 0 100 100">
+                        <defs>
+                            <linearGradient id="focus-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                <stop offset="0%" stop-color="#00f2ff" />
+                                <stop offset="100%" stop-color="#7000ff" />
+                            </linearGradient>
+                        </defs>
+                        <circle class="base" cx="50" cy="50" r="45"></circle>
+                        <circle id="gauge-path" class="path" cx="50" cy="50" r="45"></circle>
+                    </svg>
+                    <div class="gauge-data">
+                        <span id="focus-val">50</span><span class="unit">%</span>
+                    </div>
+                </div>
+
+                <div class="fatigue-tracker">
+                    <div class="tracker-info">
+                        <span>CONTINUOUS LOAD</span>
+                        <span id="fatigue-mins" class="val">0.0m</span>
+                    </div>
+                    <div class="custom-progress">
+                        <div id="fatigue-bar" class="fill"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Interaction & Reflex Panel -->
+            <div class="card reflex-card glass">
+                <div class="card-header">
+                    <h3>REFLEX PROTOCOL</h3>
+                    <div class="model-badge">Gemini 2.5 Flash Lite</div>
+                </div>
+
+                <div id="reflex-stage" class="reflex-stage">
+                    <div class="status-placeholder">MONITORING SUBCONSCIOUS...</div>
+                </div>
+
+                <div class="terminal-box">
+                    <div class="term-header">
+                        <span>SYSTEM LOG</span>
+                        <span class="ver">v1.2.0</span>
+                    </div>
+                    <div id="terminal" class="term-body">
+                        <div class="line sys">Initializing Telos Substrate...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+
+</html>

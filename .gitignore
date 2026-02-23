@@ -1,2 +1,13 @@
 venv/
 __pycache__/
+*.so
+*.csv
+.env
+.env.local
+.DS_Store
+*.pyc
+neuro_reflex/venv/
+showcase/venv/
+node_modules/
+dist/
+build/

@@ -1,0 +1,8 @@
+brainflow>=5.4.0
+scipy>=1.10.0
+numpy>=1.23.0
+pyriemann>=0.5
+google-genai>=0.2.0
+python-socketio[asyncio_client]>=5.11.0
+pylsl>=1.16.2
+python-dotenv>=1.0.0
