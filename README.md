@@ -15,8 +15,9 @@ It utilizes [BrainFlow](https://brainflow.org/) as the backend driver wrapper, b
 
 ---
 
-## 🛠️ System Prerequisites (Linux MINT/Ubuntu)
+## 🛠️ System Prerequisites
 
+### Linux (Mint/Ubuntu)
 Before running the python scripts, your Linux system needs permission to access the Bluetooth serial ports.
 
 1. **Add your user to the `dialout` and `bluetooth` groups:**
@@ -26,6 +27,21 @@ Before running the python scripts, your Linux system needs permission to access 
    ```
 2. **RESTART YOUR COMPUTER:** You **must** reboot your computer for the group permission changes to take effect!
 3. **Turn Bluetooth On:** Ensure your laptop's Bluetooth adapter is powered on. You can do this via the system tray or by running `bluetoothctl power on`.
+
+### Windows 10/11
+Windows typically handles Bluetooth serial ports automatically, but you must manually pair the headset first.
+1. Turn the Unicorn headset ON (so the LED blinks blue).
+2. Go to **Settings > Bluetooth & devices > Add device**.
+3. Select the Unicorn headset (it usually appears with its serial number, e.g., `UN-20XX.XX.XX`).
+4. If prompted for a PIN, the default is `0000`.
+5. Once paired, Windows will automatically assign it a COM port. You can run the Python scripts normally.
+
+### macOS
+macOS has strict privacy settings for Bluetooth access.
+1. Turn the Unicorn headset ON (LED blinks blue).
+2. Go to **System Settings > Bluetooth** and pair with the device.
+3. When you run the Python script for the first time, macOS may prompt you for permission to allow the Terminal or Python to access Bluetooth. You *must* click "Allow".
+4. If the script fails to connect, you may need to manually grant your Terminal application (e.g., Terminal, iTerm2, or VS Code) "Bluetooth" permissions in **System Settings > Privacy & Security > Bluetooth**.
 
 ---
 
