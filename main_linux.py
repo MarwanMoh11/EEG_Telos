@@ -14,7 +14,7 @@ import time
 import ctypes
 import logging
 import numpy as np
-from scipy.signal import iirnotch, lfilter, lfilter_zi
+from scipy.signal import iirnotch, butter, lfilter, lfilter_zi
 
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from pylsl import StreamInfo, StreamOutlet
@@ -58,17 +58,26 @@ def main():
 
     # --- Setup Continuous Filter States ---
     # We use scipy.signal for stateful filtering across chunks to prevent edge artifacts.
-    # 50Hz notch for mains power (Egypt)
-    b50, a50 = iirnotch(50.0, 30.0, fs=sampling_rate)
-    # 100Hz notch for 1st harmonic
-    b100, a100 = iirnotch(100.0, 30.0, fs=sampling_rate)
-    
-    # Initialize filter states (zi) independently for each EEG channel
     num_eeg_channels = len(eeg_channels)
     
+    # 1. High-Pass Filter (1Hz) to remove DC offset / slow drift
+    b_hp, a_hp = butter(4, 1.0, btype='highpass', fs=sampling_rate)
+    zi_hp = lfilter_zi(b_hp, a_hp)
+    z_hp = np.repeat(zi_hp[:, np.newaxis], num_eeg_channels, axis=1)
+
+    # 2. Low-Pass Filter (50Hz) to remove high frequency noise (above typical EEG bands)
+    # 50Hz also acts as an anti-aliasing filter and helps kill the 50Hz mains power base before the notch.
+    b_lp, a_lp = butter(4, 50.0, btype='lowpass', fs=sampling_rate)
+    zi_lp = lfilter_zi(b_lp, a_lp)
+    z_lp = np.repeat(zi_lp[:, np.newaxis], num_eeg_channels, axis=1)
+    
+    # 3. 50Hz notch for mains power (Egypt) - very aggressive
+    b50, a50 = iirnotch(50.0, 30.0, fs=sampling_rate)
     zi50 = lfilter_zi(b50, a50)
     z50 = np.repeat(zi50[:, np.newaxis], num_eeg_channels, axis=1)
     
+    # 4. 100Hz notch for 1st harmonic
+    b100, a100 = iirnotch(100.0, 30.0, fs=sampling_rate)
     zi100 = lfilter_zi(b100, a100)
     z100 = np.repeat(zi100[:, np.newaxis], num_eeg_channels, axis=1)
 
@@ -123,13 +132,19 @@ def main():
                 # We need it in shape (samples, channels) for lfilter (axis=0) and LSL
                 eeg_data_T = eeg_data.T
                 
-                # Apply 50Hz notch filter (stateful)
-                eeg_filtered, z50 = lfilter(b50, a50, eeg_data_T, axis=0, zi=z50)
+                # Apply 1Hz Highpass filter (Removes DC drifting so waves stay centered at 0 µV)
+                eeg_filtered, z_hp = lfilter(b_hp, a_hp, eeg_data_T, axis=0, zi=z_hp)
+                
+                # Apply 50Hz Lowpass filter (Cleans high frequencies like muscle artifacts partially)
+                eeg_filtered, z_lp = lfilter(b_lp, a_lp, eeg_filtered, axis=0, zi=z_lp)
+                
+                # Apply 50Hz notch filter (stateful, kills remaining pure 50Hz AC noise)
+                eeg_filtered, z50 = lfilter(b50, a50, eeg_filtered, axis=0, zi=z50)
                 
                 # Apply 100Hz notch filter (stateful)
                 eeg_filtered, z100 = lfilter(b100, a100, eeg_filtered, axis=0, zi=z100)
                 
-                # Push the chunk to LSL
+                # Push the heavily cleaned chunk to LSL
                 outlet.push_chunk(eeg_filtered.tolist())
 
     except KeyboardInterrupt:
