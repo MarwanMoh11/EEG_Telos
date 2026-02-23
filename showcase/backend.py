@@ -6,6 +6,7 @@ import socketio
 from pylsl import StreamInlet, resolve_byprop
 import uvicorn
 import os
+from contextlib import asynccontextmanager
 
 # Configure Logs
 logging.basicConfig(level=logging.INFO)
@@ -13,7 +14,56 @@ logger = logging.getLogger("ShowcaseBackend")
 
 # 1. Setup Socket.IO ASGI Server
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
-app = FastAPI()
+
+# 3. LSL Bridge Task
+async def lsl_bridge():
+    """
+    Resolves the 'TelosFocus' LSL stream and pushes values to WebSockets.
+    Uses asyncio.to_thread to prevent blocking the main event loop.
+    """
+    logger.info("🚀 LSL Bridge Thread started. Searching for 'TelosFocus'...")
+    inlet = None
+    
+    while True:
+        try:
+            if inlet is None:
+                # Use to_thread for blocking resolution
+                streams = await asyncio.to_thread(resolve_byprop, 'name', 'TelosFocus', timeout=1.0)
+                if streams:
+                    inlet = StreamInlet(streams[0])
+                    logger.info("✅ LSL Bridge: Connected to 'TelosFocus' stream.")
+                else:
+                    await asyncio.sleep(2.0)
+                    continue
+            
+            # Use to_thread for blocking sample pull
+            sample, timestamp = await asyncio.to_thread(inlet.pull_sample, timeout=1.0)
+            if sample:
+                focus_val = float(sample[0])
+                # Emit to all browsers
+                await sio.emit('focus_update', {'value': focus_val})
+                
+        except Exception as e:
+            logger.error(f"❌ LSL Bridge Error: {e}")
+            inlet = None # Try to reconnect
+            await asyncio.sleep(2.0)
+
+# 4. Lifecycle Management
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("Initializing Showcase Application Subsystems...")
+    bridge_task = asyncio.create_task(lsl_bridge())
+    yield
+    # Shutdown
+    logger.info("Shutting down Application Subsystems...")
+    bridge_task.cancel()
+    try:
+        await bridge_task
+    except asyncio.CancelledError:
+        pass
+
+app = FastAPI(lifespan=lifespan)
 socket_app = socketio.ASGIApp(sio, app)
 
 # Mount Static Files for the Frontend
@@ -53,42 +103,7 @@ async def calib_status(sid, data):
     logger.info(f"Calibration status from Engine: {data}")
     await sio.emit('calib_status', data)
 
-# 3. LSL Bridge Task
-async def lsl_bridge():
-    """
-    Resolves the 'TelosFocus' LSL stream and pushes values to WebSockets.
-    """
-    logger.info("LSL Bridge: Searching for 'TelosFocus' stream...")
-    inlet = None
-    
-    while True:
-        try:
-            if inlet is None:
-                streams = resolve_byprop('name', 'TelosFocus', timeout=2.0)
-                if streams:
-                    inlet = StreamInlet(streams[0])
-                    logger.info("LSL Bridge: Connected to 'TelosFocus' stream.")
-                else:
-                    await asyncio.sleep(2.0)
-                    continue
-            
-            # Pull sample (timeout 1s)
-            sample, timestamp = inlet.pull_sample(timeout=1.0)
-            if sample:
-                focus_val = float(sample[0])
-                # Emit to all browsers
-                await sio.emit('focus_update', {'value': focus_val})
-                
-        except Exception as e:
-            logger.error(f"LSL Bridge Error: {e}")
-            inlet = None # Try to reconnect
-            await asyncio.sleep(2.0)
-
-# 4. Lifecycle Management
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(lsl_bridge())
-
 if __name__ == "__main__":
     # Run on port 3000 as requested for the Showcase UI
-    uvicorn.run(socket_app, host="0.0.0.0", port=3000)
+    logger.info("Starting Uvicorn server on http://0.0.0.0:3000")
+    uvicorn.run(socket_app, host="0.0.0.0", port=3000, log_level="info")
