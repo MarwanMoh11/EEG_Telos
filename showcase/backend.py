@@ -114,6 +114,11 @@ async def request_calibration(sid, data):
     logger.info(f"Calibration requested by UI (sid: {sid})")
     await sio.emit('request_calibration', data)
 
+@sio.on('get_stream_status')
+async def on_get_stream_status(sid, data):
+    """Responds to explicit status requests from the UI."""
+    await sio.emit('stream_status', {'connected': lsl_connected}, to=sid)
+
 @sio.event
 async def calib_status(sid, data):
     """Receives status from ENGINE and broadcasts to BROWSER."""

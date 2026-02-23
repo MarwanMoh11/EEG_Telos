@@ -21,7 +21,7 @@ const gaugePath = document.getElementById('gauge-path');
 const fatigueMinsEl = document.getElementById('fatigue-mins');
 const fatigueBar = document.getElementById('fatigue-bar');
 const reflexStage = document.getElementById('reflex-stage');
-const terminalEl = document.getElementById('terminal');
+const termBody = document.getElementById('terminal');
 
 // State
 let isCalibrating = false;
@@ -29,21 +29,15 @@ let currentFocus = 0.5;
 let continuousLoad = 0.0;
 let timerInterval = null; // Single global interval to prevent clashing
 
-// 1. Calibration Logic
-startCalibBtn.addEventListener('click', () => {
-    socket.emit('request_calibration', {});
-    showCalibrationPhase('INIT');
-    log('Calibration requested. Communicating with engine...', 'sys');
-});
-
-recalibBtn.addEventListener('click', () => {
-    socket.emit('request_calibration', {});
-    calibOverlay.classList.remove('hidden');
-    showCalibrationPhase('INIT');
+// 1. Socket.IO Handlers & Synchronization
+socket.on('connect', () => {
+    console.log("Connected to server. Requesting initial status...");
+    socket.emit('get_stream_status');
 });
 
 socket.on('stream_status', (data) => {
     const isConnected = data.connected;
+    console.log("Stream Status Update:", isConnected);
 
     if (isConnected) {
         startCalibBtn.disabled = false;
@@ -87,6 +81,53 @@ socket.on('calib_status', (data) => {
         lslStatusEl.classList.remove('dim');
         lslStatusEl.classList.add('green');
     }
+});
+
+socket.on('focus_update', (data) => {
+    const val = data.value;
+    const percent = Math.round(val * 100);
+    focusValEl.innerText = percent;
+    const offset = 283 - (val * 283);
+    gaugePath.style.strokeDashoffset = offset;
+
+    currentFocus = val;
+    if (val > 0.6) {
+        continuousLoad += (1 / 60);
+        updateFatigueUI();
+    } else {
+        continuousLoad = Math.max(0, continuousLoad - (0.5 / 60));
+        updateFatigueUI();
+    }
+
+    if (percent % 10 === 0) {
+        log(`Inference: Focus probability shifted to ${percent}%`, 'eng');
+    }
+});
+
+socket.on('ui_action', (data) => {
+    const action = data.action;
+    const reason = data.reason_triggered || "Periodic burnout scan.";
+
+    reflexStage.innerHTML = `
+        <div class="action-card ${action}">
+            <h4>${action.replace('_', ' ')}</h4>
+            <p>${reason}</p>
+        </div>
+    `;
+    log(`Reasoning: [${action.toUpperCase()}] triggered by subsystem.`, 'ai');
+});
+
+// 2. Calibration UI Logic
+startCalibBtn.addEventListener('click', () => {
+    socket.emit('request_calibration', {});
+    showCalibrationPhase('INIT');
+    log('Calibration requested. Communicating with engine...', 'sys');
+});
+
+recalibBtn.addEventListener('click', () => {
+    socket.emit('request_calibration', {});
+    calibOverlay.classList.remove('hidden');
+    showCalibrationPhase('INIT');
 });
 
 function showCalibrationPhase(phase) {
@@ -178,10 +219,10 @@ function log(msg, type) {
     const line = document.createElement('div');
     line.className = `line ${type}`;
     line.innerText = `[${time}] ${msg}`;
-    terminalEl.appendChild(line);
-    terminalEl.scrollTop = terminalEl.scrollHeight;
+    termBody.appendChild(line);
+    termBody.scrollTop = termBody.scrollHeight;
 
-    if (terminalEl.children.length > 30) terminalEl.removeChild(terminalEl.firstChild);
+    if (termBody.children.length > 30) termBody.removeChild(termBody.firstChild);
 }
 
 // Auto-show calibration if not calibrated
