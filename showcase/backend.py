@@ -15,37 +15,52 @@ logger = logging.getLogger("ShowcaseBackend")
 # 1. Setup Socket.IO ASGI Server
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 
+# Global state for stream connectivity
+lsl_connected = False
+
 # 3. LSL Bridge Task
 async def lsl_bridge():
     """
     Resolves the 'TelosFocus' LSL stream and pushes values to WebSockets.
     Uses asyncio.to_thread to prevent blocking the main event loop.
     """
+    global lsl_connected
     logger.info("🚀 LSL Bridge Thread started. Searching for 'TelosFocus'...")
     inlet = None
     
     while True:
         try:
             if inlet is None:
+                if lsl_connected:
+                    lsl_connected = False
+                    await sio.emit('stream_status', {'connected': False})
+                
                 # Use to_thread for blocking resolution
                 streams = await asyncio.to_thread(resolve_byprop, 'name', 'TelosFocus', timeout=1.0)
                 if streams:
                     inlet = StreamInlet(streams[0])
+                    lsl_connected = True
                     logger.info("✅ LSL Bridge: Connected to 'TelosFocus' stream.")
+                    await sio.emit('stream_status', {'connected': True})
                 else:
                     await asyncio.sleep(2.0)
                     continue
             
             # Use to_thread for blocking sample pull
-            sample, timestamp = await asyncio.to_thread(inlet.pull_sample, timeout=1.0)
+            sample, timestamp = await asyncio.to_thread(inlet.pull_sample, timeout=0.1)
             if sample:
                 focus_val = float(sample[0])
                 # Emit to all browsers
                 await sio.emit('focus_update', {'value': focus_val})
+            else:
+                # If we timeout too many times, we might have lost connection
+                pass
                 
         except Exception as e:
             logger.error(f"❌ LSL Bridge Error: {e}")
-            inlet = None # Try to reconnect
+            inlet = None 
+            lsl_connected = False
+            await sio.emit('stream_status', {'connected': False})
             await asyncio.sleep(2.0)
 
 # 4. Lifecycle Management
@@ -80,6 +95,8 @@ async def get_index():
 @sio.event
 async def connect(sid, environ):
     logger.info(f"Client connected: {sid}")
+    # Inform the client about the current stream status immediately
+    await sio.emit('stream_status', {'connected': lsl_connected}, to=sid)
 
 @sio.event
 async def disconnect(sid):

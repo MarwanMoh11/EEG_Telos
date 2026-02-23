@@ -23,7 +23,11 @@
 
             <div id="calib-content" class="calib-body">
                 <p class="instruction">Synchronization required to establish baseline.</p>
-                <button id="start-calib-btn" class="btn primary">Start Calibration</button>
+                <div id="signal-status" class="status-warning">
+                    <span class="pulse-red dot"></span>
+                    <span>Searching for Neural Stream... (Check Bluetooth)</span>
+                </div>
+                <button id="start-calib-btn" class="btn primary" disabled>Start Calibration</button>
             </div>
 
             <div id="calib-active" class="calib-body hidden">

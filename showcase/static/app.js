@@ -13,6 +13,7 @@ const phaseNameEl = document.getElementById('phase-name');
 const calibTimerEl = document.getElementById('calib-timer');
 const calibProgressBar = document.getElementById('calib-progress-bar');
 const phaseInstructionEl = document.getElementById('phase-instruction');
+const signalStatusEl = document.getElementById('signal-status');
 
 // UI Elements: Dashboard
 const focusValEl = document.getElementById('focus-val');
@@ -39,6 +40,28 @@ recalibBtn.addEventListener('click', () => {
     socket.emit('request_calibration', {});
     calibOverlay.classList.remove('hidden');
     showCalibrationPhase('INIT');
+});
+
+socket.on('stream_status', (data) => {
+    const isConnected = data.connected;
+
+    if (isConnected) {
+        startCalibBtn.disabled = false;
+        startCalibBtn.innerText = 'Start Calibration';
+        signalStatusEl.classList.add('hidden');
+        lslStatusEl.innerText = 'READY';
+        lslStatusEl.classList.remove('dim', 'red');
+        lslStatusEl.classList.add('green');
+        log('Neural Stream Detected. System Armed.', 'sys');
+    } else {
+        startCalibBtn.disabled = true;
+        startCalibBtn.innerText = 'Signal Lost';
+        signalStatusEl.classList.remove('hidden');
+        lslStatusEl.innerText = 'OFFLINE';
+        lslStatusEl.classList.remove('dim', 'green');
+        lslStatusEl.classList.add('red');
+        log('Neural Stream Lost. Please check device pairing.', 'sys');
+    }
 });
 
 socket.on('calib_status', (data) => {
