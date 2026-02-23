@@ -51,10 +51,19 @@ def main():
     # 2. Get board parameters
     sampling_rate = BoardShim.get_sampling_rate(board_id)
     eeg_channels = BoardShim.get_eeg_channels(board_id)
+    accel_channels = BoardShim.get_accel_channels(board_id)
+    gyro_channels = BoardShim.get_gyro_channels(board_id)
+    battery_channel = BoardShim.get_battery_channel(board_id)
+    
+    # We will build a composite list of all channels we want to stream
+    # Unicorn order: [8 EEG] + [3 Accel] + [3 Gyro] + [1 Battery] = 15 channels
+    stream_channels = eeg_channels + accel_channels + gyro_channels + [battery_channel]
+    num_stream_channels = len(stream_channels)
     
     # We only want to filter the EEG channels (typically 0-7 for Unicorn)
     logger.info(f"Device Initialization: Sampling Rate = {sampling_rate}Hz")
-    logger.info(f"EEG Channels to be filtered: {eeg_channels}")
+    logger.info(f"EEG Channels (Filtered): {eeg_channels}")
+    logger.info(f"Aux Channels (Unfiltered): Accel {accel_channels}, Gyro {gyro_channels}, Batt [{battery_channel}]")
 
     # --- Setup Continuous Filter States ---
     # We use scipy.signal for stateful filtering across chunks to prevent edge artifacts.
@@ -82,25 +91,36 @@ def main():
     z100 = np.repeat(zi100[:, np.newaxis], num_eeg_channels, axis=1)
 
     # 3. Setup LSL Outlet
-    # We will stream ONLY the EEG data to match standard BCI pipelines, 
-    # or you could stream all BrainFlow channels. Here we stream the EEG channels.
+    # We will stream all relevant channels together in one chunky array
     info = StreamInfo(
         name='UnicornMint', 
-        type='EEG', 
-        channel_count=num_eeg_channels, 
+        type='EEG_EXT', 
+        channel_count=num_stream_channels, 
         nominal_srate=sampling_rate, 
         channel_format='float32', 
         source_id=f'unicorn_brainflow_{serial_num}'
     )
     
-    # Add metadata for Unicorn montage
+    # Add metadata for Unicorn montage (all 15 channels)
     chns = info.desc().append_child("channels")
-    labels = ['Fz', 'C3', 'Cz', 'C4', 'Pz', 'PO7', 'Oz', 'PO8']
-    for label in (labels if len(labels) == num_eeg_channels else [f'CH{i}' for i in range(num_eeg_channels)]):
+    labels = ['Fz', 'C3', 'Cz', 'C4', 'Pz', 'PO7', 'Oz', 'PO8', 
+              'AccX', 'AccY', 'AccZ', 'GyrX', 'GyrY', 'GyrZ', 'Battery']
+              
+    for label in (labels if len(labels) == num_stream_channels else [f'CH{i}' for i in range(num_stream_channels)]):
         ch = chns.append_child("channel")
         ch.append_child_value("label", label)
-        ch.append_child_value("unit", "microvolts")
-        ch.append_child_value("type", "EEG")
+        if label in ['AccX', 'AccY', 'AccZ']:
+            ch.append_child_value("unit", "g")
+            ch.append_child_value("type", "Accelerometer")
+        elif label in ['GyrX', 'GyrY', 'GyrZ']:
+            ch.append_child_value("unit", "deg/s")
+            ch.append_child_value("type", "Gyroscope")
+        elif label == 'Battery':
+            ch.append_child_value("unit", "percent")
+            ch.append_child_value("type", "Battery")
+        else:
+            ch.append_child_value("unit", "microvolts")
+            ch.append_child_value("type", "EEG")
         
     outlet = StreamOutlet(info)
     logger.info("LSL StreamOutlet 'UnicornMint' initialized successfully.")
@@ -126,26 +146,33 @@ def main():
                 # data is returned as (num_channels, num_samples)
                 data = board.get_board_data() 
                 
-                # Extract out just the EEG channels
+                # 1. Extract the EEG channels to be aggressively filtered
                 eeg_data = data[eeg_channels, :]
+                eeg_data_T = eeg_data.T # Shape (samples, channels)
                 
-                # We need it in shape (samples, channels) for lfilter (axis=0) and LSL
-                eeg_data_T = eeg_data.T
-                
-                # Apply 1Hz Highpass filter (Removes DC drifting so waves stay centered at 0 µV)
+                # Apply 1Hz Highpass filter (Removes DC drifting)
                 eeg_filtered, z_hp = lfilter(b_hp, a_hp, eeg_data_T, axis=0, zi=z_hp)
                 
-                # Apply 50Hz Lowpass filter (Cleans high frequencies like muscle artifacts partially)
+                # Apply 50Hz Lowpass filter (Cleans high frequencies)
                 eeg_filtered, z_lp = lfilter(b_lp, a_lp, eeg_filtered, axis=0, zi=z_lp)
                 
-                # Apply 50Hz notch filter (stateful, kills remaining pure 50Hz AC noise)
+                # Apply 50Hz notch filter (kills pure AC noise)
                 eeg_filtered, z50 = lfilter(b50, a50, eeg_filtered, axis=0, zi=z50)
                 
-                # Apply 100Hz notch filter (stateful)
+                # Apply 100Hz harmonic notch filter
                 eeg_filtered, z100 = lfilter(b100, a100, eeg_filtered, axis=0, zi=z100)
                 
-                # Push the heavily cleaned chunk to LSL
-                outlet.push_chunk(eeg_filtered.tolist())
+                # 2. Extract the unfiltered Auxiliary channels (Accel, Gyro, Batt)
+                # Ensure they stay in shape (samples, channels)
+                aux_data = data[accel_channels + gyro_channels + [battery_channel], :]
+                aux_data_T = aux_data.T
+                
+                # 3. Reconstruct the full 15-channel output frame for this chunk
+                # Column stack: [8 EEG filtered] + [7 Aux unfiltered]
+                final_chunk = np.hstack((eeg_filtered, aux_data_T))
+                
+                # Push the combined chunk to LSL
+                outlet.push_chunk(final_chunk.tolist())
 
     except KeyboardInterrupt:
         logger.info("Interrupted by user (Ctrl+C). Terminating...")

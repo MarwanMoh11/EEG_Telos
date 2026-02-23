@@ -80,19 +80,20 @@ class EEGVisualizer(QMainWindow):
         chunk, timestamps = self.inlet.pull_chunk(timeout=0.0)
         
         if timestamps:
-            # Convert standard Python list to numpy array for fast math
-            # Shape will be (samples_received, channels)
+            # new_data shape: (samples, TotalChannels) e.g., (10, 15)
+            # We only want to plot the first self.channels (8 EEG channels)
             new_data = np.array(chunk) 
-            num_samples = new_data.shape[0]
+            eeg_extract = new_data[:, :self.channels]
+            num_samples = eeg_extract.shape[0]
             
             # 2. Shift the old data left and append the new data to the right
             if num_samples >= self.window_size:
                 # Rare case: if we lagged so hard we got more than 5 seconds at once
-                self.data_buffer = new_data[-self.window_size:, :].T 
+                self.data_buffer = eeg_extract[-self.window_size:, :].T 
             else:
                 # Normal case: Roll buffer left by num_samples, then overwrite the end
                 self.data_buffer = np.roll(self.data_buffer, -num_samples, axis=1)
-                self.data_buffer[:, -num_samples:] = new_data.T
+                self.data_buffer[:, -num_samples:] = eeg_extract.T
                 
             # 3. Create the X-axis time vector (-5 seconds to 0)
             time_vector = np.linspace(-5, 0, self.window_size)
@@ -121,9 +122,9 @@ def main():
     
     # Check stream info
     info = inlet.info()
-    channels = info.channel_count()
+    total_channels = info.channel_count()
     fs = info.nominal_srate()
-    logger.info(f"Stream Info: {channels} channels at {fs}Hz")
+    logger.info(f"Stream Info: {total_channels} total channels at {fs}Hz. Visualizing first 8 (EEG).")
     
     # Start the PyQt Application
     app = QApplication(sys.argv)
@@ -131,7 +132,8 @@ def main():
     # Use dark theme for standard widgets matching the black graph
     app.setStyle("Fusion")
     
-    visualizer = EEGVisualizer(inlet=inlet, channels=channels, fs=fs)
+    # We explicitly tell EEGVisualizer to only expect 8 channels even if the stream has more
+    visualizer = EEGVisualizer(inlet=inlet, channels=8, fs=fs)
     visualizer.show()
     
     logger.info("Starting real-time visualization loop. Close the window or press Ctrl+C to exit.")
