@@ -1,8 +1,8 @@
-# Unicorn Hybrid Black - LSL Bridge (Linux Edition)
+# Unicorn Hybrid Black - LSL Bridge
 
-This repository contains a robust, production-ready pipeline for connecting the **g.tec Unicorn Hybrid Black** EEG headset to a Linux Mint / Ubuntu system via Bluetooth, processing the raw signals in real-time, and broadcasting them over the local network using the **Lab Streaming Layer (LSL)**.
+This repository contains a robust, production-ready pipeline for connecting the **g.tec Unicorn Hybrid Black** EEG headset to Windows, macOS, or Linux systems via Bluetooth, processing the raw signals in real-time, and broadcasting them over the local network using the **Lab Streaming Layer (LSL)**.
 
-It utilizes [BrainFlow](https://brainflow.org/) as the backend driver wrapper, bypassing the need for proprietary Windows-only SDKs.
+It utilizes [BrainFlow](https://brainflow.org/) as the cross-platform backend driver wrapper, bypassing the need for proprietary Windows-only SDKs.
 
 ## 🧠 Features
 - **Auto-Discovery:** Automatically scans for and connects to the Unicorn headset via Bluetooth.
@@ -72,8 +72,8 @@ Clone the repository and install the required Python packages into a virtual env
 git clone https://github.com/MarwanMoh11/EEG_Telos.git
 cd EEG_Telos
 
-# 2. Create and activate a virtual environment
-python3 -m venv venv
+# 2. Create and activate a virtual environment (Windows: `venv\Scripts\activate`)
+python -m venv venv
 source venv/bin/activate
 
 # 3. Install dependencies
@@ -90,10 +90,9 @@ The pipeline consists of one **Broadcaster** script (which physically connects t
 You must ALWAYS run this script first. It acts as the engine for the entire pipeline.
 
 1. **Unplug** the headset from USB and turn it **ON** (LED should blink blue).
-2. Open a terminal and run:
+2. Open a terminal, activate your virtual environment, and run:
    ```bash
-   source venv/bin/activate
-   python main_linux.py
+   python main.py
    ```
 3. When prompted for `libunicorn.so` and the Serial Number, you can simply **Press Enter twice** to let BrainFlow auto-discover the headset.
 4. Wait for the terminal to print `Data streaming started.`. The headset LED should now be **Solid Blue**.
@@ -101,9 +100,9 @@ You must ALWAYS run this script first. It acts as the engine for the entire pipe
 *Leave this terminal running in the background.*
 
 ### Step 2: Use the Data (Consumer Scripts)
-While `main_linux.py` is running, you can open **new terminal windows** to run any of the consumer scripts. You can run multiple consumers at the same time!
+While `main.py` is running, you can open **new terminal windows** to run any of the consumer scripts. You can run multiple consumers at the same time!
 
-**(Remember to run `source venv/bin/activate` in every new terminal before running a python script).**
+**(Remember to activate the virtual environment in every new terminal before running a python script).**
 
 #### 📹 Option A: The Real-Time Visualizer
 Displays a scrolling, real-time graph of the 8 filtered EEG channels.
