@@ -1,0 +1,5 @@
+pylsl>=1.16.2
+scipy>=1.10.0
+numpy>=1.23.0
+# Note: UnicornPy MUST be installed from g.tec's provided SDK. 
+# It is typically provided as a .whl file in the SDK folder.
