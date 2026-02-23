@@ -39,12 +39,16 @@ def main():
         else:
             logger.warning(f"File not found at {lib_path}. BrainFlow will attempt to find it automatically.")
 
-    serial_num = input("Please enter the Unicorn Serial Number (e.g., UN-2021.05.35) [Press Enter to auto-discover]: ").strip()
+    serial_num = input("Please enter the Unicorn Serial Number (e.g., UN-2021.05.35) [Press Enter to skip]: ").strip()
+    serial_port = input("Please enter the Bluetooth Serial Port if known (e.g., /dev/rfcomm0) [Press Enter to auto-discover]: ").strip()
 
     params = BrainFlowInputParams()
     if serial_num:
         params.serial_number = serial_num
-
+    if serial_port:
+        params.serial_port = serial_port
+        params.mac_address = "" # BrainFlow might use serial_port to connect directly
+        
     board_id = BoardIds.UNICORN_BOARD.value
     board = BoardShim(board_id, params)
 
