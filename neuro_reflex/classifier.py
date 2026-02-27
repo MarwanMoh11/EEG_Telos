@@ -1,6 +1,7 @@
 import time
 import logging
 import numpy as np
+import traceback
 from pyriemann.estimation import Covariances
 from pyriemann.classification import MDM
 
@@ -10,7 +11,7 @@ class FocusClassifier:
     """Riemannian Geometry classifier taking raw EEG and returning Focus Probability."""
     
     def __init__(self, sampling_rate: int = 250):
-        self.sampling_rate = sampling_rate
+        self.sampling_rate = int(sampling_rate)
         self.cov_estimator = Covariances(estimator='lwf')
         self.mdm = MDM()
         self.is_calibrated = False
@@ -40,7 +41,12 @@ class FocusClassifier:
         focus_full = np.concatenate(self.focus_buffer, axis=1)
         
         logger.info(f"Finalizing Calibration. Rest Samples: {rest_full.shape[1]}, Focus Samples: {focus_full.shape[1]}")
-        self._train_model(rest_full, focus_full)
+        try:
+            self._train_model(rest_full, focus_full)
+        except Exception as e:
+            logger.error(f"Training failed: {e}")
+            logger.error(traceback.format_exc())
+            raise e
         return True
 
     def _train_model(self, rest_data: np.ndarray, focus_data: np.ndarray):
@@ -48,8 +54,8 @@ class FocusClassifier:
         epochs_rest = self._chunk_into_epochs(rest_data)
         epochs_focus = self._chunk_into_epochs(focus_data)
         
-        y_rest = np.zeros(len(epochs_rest))
-        y_focus = np.ones(len(epochs_focus))
+        y_rest = np.zeros(len(epochs_rest), dtype=int)
+        y_focus = np.ones(len(epochs_focus), dtype=int)
         
         X = np.concatenate([epochs_rest, epochs_focus], axis=0) # Shape: (trials, channels, samples)
         y = np.concatenate([y_rest, y_focus])
@@ -61,14 +67,18 @@ class FocusClassifier:
 
     def _chunk_into_epochs(self, data: np.ndarray) -> np.ndarray:
         """Splits continuous multichannel data into 1-second epochs."""
-        num_epochs = data.shape[1] // self.sampling_rate
+        fs = int(self.sampling_rate)
+        num_epochs = int(data.shape[1] // fs)
+        
         if num_epochs == 0:
             raise ValueError(f"Not enough data to create a 1-second epoch. Only got {data.shape[1]} samples.")
             
         # Truncate to exact multiple of sampling_rate
-        truncated_data = data[:, :num_epochs * self.sampling_rate]
+        total_samples = num_epochs * fs
+        truncated_data = data[:, :total_samples]
+        
         # Reshape to (channels, epochs, samples_per_epoch)
-        reshaped = truncated_data.reshape(data.shape[0], num_epochs, self.sampling_rate)
+        reshaped = truncated_data.reshape(int(data.shape[0]), num_epochs, fs)
         # Transpose to (epochs, channels, samples_per_epoch) as pyriemann expects
         return reshaped.transpose(1, 0, 2)
         

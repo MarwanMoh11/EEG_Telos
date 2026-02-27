@@ -4,25 +4,30 @@ A high-performance "Neural Reflex" system for Linux Mint, bridging BCI hardware 
 
 ## 🚀 Core Components
 
-### 1. Neuro-Reflex Engine (`/neuro_reflex`)
-The system's "Spinal Cord". 
+### 1. Telos Command Center (`/showcase`)
+The central unified dashboard for operating the EEG pipeline.
+- **Embedded Generative AI**: Uses `backend.py` to manage all data flows.
+- **Zero-CLI Interface**: Toggle between real Unicorn headset data and a built-in synthetic signal generator directly from the browser.
+- **Real-Time Visualization**: Canvas-based EEG waveforms, FFT frequency spectrum, and automatic artifact detection (blinks, jaw clenches).
+
+### 2. Neuro-Reflex Engine (`/neuro_reflex`)
+The system's underlying "Spinal Cord" (managed automatically or run explicitly for advanced logging).
 - **Real-time Signal Processing**: 50Hz Notch (Egypt Grid) + 1-50Hz Bandpass.
 - **Riemannian Classifier**: Interprets brain states using Covariance Manifolds.
 - **Burnout Protocol**: Uses **Gemini 2.5 Flash Lite** to analyze fatigue and issue JSON commands.
 
-### 2. Showcase Dashboard (`/showcase`)
-A premium, non-technical interface for demonstration.
-- **FastAPI Backend**: Bridges LSL brain data to WebSockets.
-- **Glassmorphism UI**: Real-time Focus Gauges and Action Alerts.
-- **Live Terminal**: Transparent view into the AI's reasoning process.
-
 ## 🛠️ Getting Started
 
 ### Installation
+You need `scipy` for the new backend FFT computations.
 ```bash
-# Install core and showcase dependencies
-pip install -r neuro_reflex/requirements.txt
-pip install -r showcase/requirements.txt
+# Enter the showcase directory
+cd showcase
+source venv/bin/activate
+
+# Install requirements
+pip install -r requirements.txt
+pip install scipy
 ```
 
 ### Configuration
@@ -30,8 +35,13 @@ pip install -r showcase/requirements.txt
 2. Ensure you are in the `dialout` group for Bluetooth access.
 
 ### Execution
-1. **Showcase UI**: `python3 showcase/backend.py` (Browse to http://localhost:3000)
-2. **BCI Engine**: `python3 neuro_reflex/main.py` (Follow CLI Calibration)
+
+To launch the unified, no-CLI dashboard:
+```bash
+# Inside the showcase venv
+python3 backend.py
+```
+Then, open your browser to **http://localhost:3000**. The dashboard will start in **Synthetic** mode automatically. You can toggle to **Device** mode via the top navigation bar when your Unicorn headset is connected.
 
 ---
 

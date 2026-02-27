@@ -83,7 +83,7 @@ class FFTVisualizer(QMainWindow):
                 
             # Compute FFT using Welch's method for each channel
             for i in range(self.channels):
-                freqs, psd = welch(self.data_buffer[i, :], fs=self.fs, nperseg=self.fs)
+                freqs, psd = welch(self.data_buffer[i, :], fs=self.fs, nperseg=int(self.fs))
                 
                 # Prevent log(0)
                 psd = np.clip(psd, 1e-12, None)

@@ -4,14 +4,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Telos Reflex | Neural Dashboard</title>
+    <title>Telos Command Center</title>
+    <meta name="description" content="Real-time EEG neural dashboard for Unicorn Hybrid Black">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <script src="/static/socket.io.min.js"></script>
 </head>
 
-<body class="theme-dark">
+<body>
     <div class="bg-mesh"></div>
-    <div class="scanline"></div>
 
     <!-- Calibration Overlay -->
     <div id="calib-overlay" class="overlay hidden">
@@ -20,16 +24,18 @@
                 <div class="orb small pulse-blue"></div>
                 <h2>Neural Alignment</h2>
             </div>
-
             <div id="calib-content" class="calib-body">
                 <p class="instruction">Synchronization required to establish baseline.</p>
                 <div id="signal-status" class="status-warning">
                     <span class="pulse-red dot"></span>
-                    <span>Searching for Neural Stream... (Check Bluetooth)</span>
+                    <span>Searching for Neural Stream...</span>
                 </div>
-                <button id="start-calib-btn" class="btn primary" disabled>Start Calibration</button>
+                <div class="calib-footer" style="display: flex; gap: 10px; margin-top: 1.5rem;">
+                    <button id="start-calib-btn" class="btn primary" disabled style="flex: 2;">Start
+                        Calibration</button>
+                    <button id="cancel-calib-btn" class="btn outline small" style="flex: 1;">Cancel</button>
+                </div>
             </div>
-
             <div id="calib-active" class="calib-body hidden">
                 <div class="phase-indicator">
                     <span id="phase-name">REST</span>
@@ -43,82 +49,236 @@
         </div>
     </div>
 
+    <!-- Error Overlay -->
+    <div id="error-overlay" class="overlay hidden">
+        <div class="calib-card glass">
+            <div class="calib-header">
+                <div class="orb small pulse-red"></div>
+                <h2 id="error-title">Connection Failed</h2>
+            </div>
+            <div class="calib-body">
+                <p class="instruction" id="error-msg">Could not establish a link with the Unicorn headset.</p>
+                <div class="status-warning" style="margin-bottom: 2rem;">
+                    <span>Reverting to Synthetic mode...</span>
+                </div>
+                <button id="error-ok-btn" class="btn primary"
+                    style="background: linear-gradient(135deg, var(--red), var(--orange)); box-shadow: 0 4px 16px rgba(255, 62, 62, 0.35);">Return
+                    to Synthetic</button>
+            </div>
+        </div>
+    </div>
+
     <main class="app-shell">
+        <!-- Top Navigation -->
         <nav class="top-nav glass">
             <div class="brand">
                 <div class="logo"></div>
                 <div class="brand-text">
                     <span class="t-telos">TELOS</span>
-                    <span class="t-reflex">REFLEX</span>
+                    <span class="t-reflex">COMMAND CENTER</span>
                 </div>
             </div>
 
-            <div class="nav-metrics">
-                <div class="metric">
-                    <span class="label">CORE</span>
-                    <span class="val green">STABLE</span>
+            <div class="nav-controls">
+                <!-- Data Source Toggle -->
+                <div class="source-toggle" id="source-toggle">
+                    <button class="toggle-btn active" data-source="synthetic" id="btn-synthetic">
+                        <span class="toggle-icon">⚡</span> Synthetic
+                    </button>
+                    <button class="toggle-btn" data-source="device" id="btn-device">
+                        <span class="toggle-icon">🧠</span> Device
+                    </button>
                 </div>
-                <div class="metric">
-                    <span class="label">LSL</span>
-                    <span id="lsl-status" class="val dim">WAITING</span>
+
+                <div class="nav-metrics">
+                    <div class="metric">
+                        <span class="label">SOURCE</span>
+                        <span id="lsl-status" class="val green">SYNTHETIC</span>
+                    </div>
+                    <div class="metric">
+                        <span class="label">STREAM</span>
+                        <span id="stream-name" class="val dim">Active</span>
+                    </div>
                 </div>
-                <button id="recalib-btn" class="btn outline small">Recalibrate</button>
+
+                <button id="recalib-btn" class="btn outline small hidden-controls">Recalibrate</button>
             </div>
         </nav>
 
+        <!-- Main Dashboard Grid -->
         <div class="dashboard-grid">
-            <!-- Focus Monitoring -->
-            <div class="card focus-card glass">
+
+            <!-- EEG Waveforms Panel -->
+            <div class="card waveform-card glass" id="waveform-panel">
                 <div class="card-header">
-                    <h3>COGNITIVE FOCUS</h3>
+                    <h3>EEG WAVEFORMS</h3>
                     <div class="live-tag"><span class="dot"></span> LIVE</div>
                 </div>
+                <div class="canvas-wrapper">
+                    <canvas id="eeg-canvas"></canvas>
+                </div>
+                <div class="channel-legend" id="channel-legend"></div>
+            </div>
 
-                <div class="gauge-wrapper">
-                    <svg class="focus-gauge" viewBox="0 0 100 100">
-                        <defs>
-                            <linearGradient id="focus-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                <stop offset="0%" stop-color="#00f2ff" />
-                                <stop offset="100%" stop-color="#7000ff" />
-                            </linearGradient>
-                        </defs>
-                        <circle class="base" cx="50" cy="50" r="45"></circle>
-                        <circle id="gauge-path" class="path" cx="50" cy="50" r="45"></circle>
-                    </svg>
-                    <div class="gauge-data">
-                        <span id="focus-val">50</span><span class="unit">%</span>
+            <!-- Right Column -->
+            <div class="right-column">
+
+                <!-- Focus Gauge -->
+                <div class="card focus-card glass">
+                    <div class="card-header">
+                        <h3>COGNITIVE FOCUS</h3>
+                        <div class="focus-badge" id="focus-badge">ANALYZING</div>
                     </div>
+                    <div class="gauge-wrapper">
+                        <svg class="focus-gauge" viewBox="0 0 100 100">
+                            <defs>
+                                <linearGradient id="focus-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" stop-color="#00f2ff" />
+                                    <stop offset="100%" stop-color="#7000ff" />
+                                </linearGradient>
+                            </defs>
+                            <circle class="base" cx="50" cy="50" r="45"></circle>
+                            <circle id="gauge-path" class="path" cx="50" cy="50" r="45"></circle>
+                        </svg>
+                        <div class="gauge-data">
+                            <span id="focus-val">50</span><span class="unit">%</span>
+                        </div>
+                    </div>
+
+                    <!-- AI Insights Block -->
+                    <div class="ai-insights-container">
+                        <button id="btn-analyze-state" class="btn outline small ai-btn">
+                            <span class="ai-icon">✨</span> Analyze Current State
+                        </button>
+                        <div id="ai-result-box" class="ai-result hidden">
+                            <div class="ai-state-label" id="ai-state-label">DEEP FLOW</div>
+                            <div class="ai-insight-text" id="ai-insight-text">Sustained alpha suppression indicates high
+                                cognitive engagement with minimal fatigue markers.</div>
+                        </div>
+                    </div>
+
                 </div>
 
-                <div class="fatigue-tracker">
-                    <div class="tracker-info">
-                        <span>CONTINUOUS LOAD</span>
-                        <span id="fatigue-mins" class="val">0.0m</span>
+                <!-- Artifact Monitor -->
+                <div class="card artifact-card glass">
+                    <div class="card-header">
+                        <h3>ARTIFACT MONITOR</h3>
+                        <div id="artifact-badge" class="artifact-badge relaxed">CLEAN</div>
                     </div>
-                    <div class="custom-progress">
-                        <div id="fatigue-bar" class="fill"></div>
+                    <div class="artifact-bar-container">
+                        <div class="artifact-bar-row" id="artifact-bars"></div>
                     </div>
+                    <div id="artifact-detail" class="artifact-detail">Signal quality nominal</div>
                 </div>
             </div>
 
-            <!-- Interaction & Reflex Panel -->
-            <div class="card reflex-card glass">
+            <!-- FFT Spectrum Panel -->
+            <div class="card fft-card glass" id="fft-panel">
                 <div class="card-header">
-                    <h3>REFLEX PROTOCOL</h3>
-                    <div class="model-badge">Gemini 2.5 Flash Lite</div>
+                    <h3>FREQUENCY SPECTRUM</h3>
+                    <div class="band-legend">
+                        <span class="band alpha-band">α Alpha</span>
+                        <span class="band beta-band">β Beta</span>
+                    </div>
+                </div>
+                <div class="canvas-wrapper">
+                    <canvas id="fft-canvas"></canvas>
+                </div>
+            </div>
+
+            <!-- Bottom Row -->
+            <div class="bottom-row">
+
+                <!-- Synthetic Controls -->
+                <div class="card controls-card glass" id="synthetic-controls">
+                    <div class="card-header">
+                        <h3>SYNTHETIC CONTROLS</h3>
+                    </div>
+                    <div class="controls-layout">
+                        <div class="control-buttons">
+                            <button class="ctrl-btn clench-btn" id="ctrl-clench">
+                                <span class="ctrl-icon">💪</span>
+                                <span class="ctrl-label">Jaw Clench</span>
+                                <span class="ctrl-state" id="clench-state">OFF</span>
+                            </button>
+                            <button class="ctrl-btn blink-btn" id="ctrl-blink">
+                                <span class="ctrl-icon">👁️</span>
+                                <span class="ctrl-label">Eye Blink</span>
+                                <span class="ctrl-state">TRIGGER</span>
+                            </button>
+                            <button class="ctrl-btn focus-btn" id="ctrl-focus">
+                                <span class="ctrl-icon">🎯</span>
+                                <span class="ctrl-label">Deep Focus</span>
+                                <span class="ctrl-state" id="focus-state">OFF</span>
+                            </button>
+                        </div>
+
+                        <!-- MOOD PROFILE (HEMISPHERIC ASYMMETRY) -->
+                        <div class="mood-profile-container">
+                            <h4 class="sub-header">EMOTIONAL AROUSAL</h4>
+                            <div class="segmented-control" id="mood-selector">
+                                <button class="seg-btn danger" data-mood="frustrated">Frustrated</button>
+                                <button class="seg-btn active" data-mood="neutral">Neutral</button>
+                                <button class="seg-btn accent" data-mood="motivated">Motivated</button>
+                            </div>
+                        </div>
+
+                        <!-- NOISE PROFILE -->
+                        <div class="noise-profile-container">
+                            <h4 class="sub-header">NOISE PROFILE</h4>
+                            <div class="segmented-control" id="noise-selector">
+                                <button class="seg-btn" data-level="clean">Clean</button>
+                                <button class="seg-btn active" data-level="realistic">Realistic</button>
+                                <button class="seg-btn" data-level="high">High</button>
+                                <button class="seg-btn danger" data-level="extreme">Extreme</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <div id="reflex-stage" class="reflex-stage">
-                    <div class="status-placeholder">MONITORING SUBCONSCIOUS...</div>
+                <!-- Device Performance (Hidden by default) -->
+                <div class="card performance-card glass hidden-controls" id="device-performance">
+                    <div class="card-header">
+                        <h3>NEURAL PERFORMANCE</h3>
+                        <div class="status-tag pulse-blue">NOMINAL</div>
+                    </div>
+                    <div class="metrics-grid">
+                        <div class="p-metric">
+                            <span class="p-label">Link Stability</span>
+                            <div class="p-progress">
+                                <div class="p-fill" style="width: 98%"></div>
+                            </div>
+                            <span class="p-val">98.2%</span>
+                        </div>
+                        <div class="p-metric">
+                            <span class="p-label">Engine Latency</span>
+                            <div class="p-progress">
+                                <div class="p-fill green" style="width: 15%"></div>
+                            </div>
+                            <span class="p-val">12ms</span>
+                        </div>
+                        <div class="p-metric">
+                            <span class="p-label">Buffer Health</span>
+                            <div class="p-progress">
+                                <div class="p-fill" id="buffer-health-fill" style="width: 100%"></div>
+                            </div>
+                            <span class="p-val" id="buffer-health-val">100%</span>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="terminal-box">
-                    <div class="term-header">
-                        <span>SYSTEM LOG</span>
-                        <span class="ver">v1.2.0</span>
+                <!-- System Log -->
+                <div class="card log-card glass">
+                    <div class="card-header">
+                        <h3>SYSTEM LOG</h3>
+                        <div>
+                            <span class="ver">v2.0.0</span>
+                            <button id="clear-term-btn" class="btn outline small"
+                                style="margin-left: 10px; padding: 2px 6px; font-size: 0.5rem;">Clear</button>
+                        </div>
                     </div>
                     <div id="terminal" class="term-body">
-                        <div class="line sys">Initializing Telos Substrate...</div>
+                        <div class="line sys">Initializing Telos Command Center...</div>
                     </div>
                 </div>
             </div>

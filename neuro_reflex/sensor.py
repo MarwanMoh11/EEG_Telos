@@ -3,6 +3,7 @@ import logging
 import numpy as np
 from scipy.signal import iirnotch, butter, lfilter, lfilter_zi
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
+from pylsl import StreamInlet, resolve_byprop
 
 logger = logging.getLogger(__name__)
 
@@ -20,30 +21,29 @@ class FatigueTimer:
         if is_high_load:
             self.high_load_duration += dt
         else:
-            # For this MVP, we assume fatigue dissipates a bit when not under high load
-            # OR we can just track cumulative high-load time. We will just track cumulative
-            # for the session, but decay it slowly when resting.
-            # Let's use a slow decay to simulate recovery.
             self.high_load_duration = max(0.0, self.high_load_duration - dt * 0.5)
             
     def get_duration_minutes(self) -> float:
         return self.high_load_duration / 60.0
 
 class SensorLayer:
-    """Handles Data Acquisition from the Unicorn board and Signal Processing."""
-    def __init__(self, serial_num: str = ""):
+    """Handles Data Acquisition from the Unicorn board (Direct) or LSL Bridge (Fallback)."""
+    def __init__(self, serial_num: str = "", sio_client=None):
+        self.sio = sio_client
         self.board_id = BoardIds.UNICORN_BOARD.value
+        self.serial_num = serial_num
+        self.sampling_rate = 250.0 # Default for Unicorn
+        self.eeg_channels = list(range(8)) # Default 0-7
+        self.num_eeg_channels = 8
+        self.inlet = None
+        self.is_lsl_mode = False
+        
         params = BrainFlowInputParams()
         if serial_num:
             params.serial_number = serial_num
-            
         self.board = BoardShim(self.board_id, params)
-        self.sampling_rate = BoardShim.get_sampling_rate(self.board_id)
-        self.eeg_channels = BoardShim.get_eeg_channels(self.board_id)
-        self.num_eeg_channels = len(self.eeg_channels)
-        
-        # Setup continuous stateful filters
-        # 1. Bandpass 1-50Hz (Using Highpass 1Hz + Lowpass 50Hz)
+
+        # Setup filters (Same for both modes to ensure data consistency)
         self.b_hp, self.a_hp = butter(4, 1.0, btype='highpass', fs=self.sampling_rate)
         zi_hp = lfilter_zi(self.b_hp, self.a_hp)
         self.z_hp = np.repeat(zi_hp[:, np.newaxis], self.num_eeg_channels, axis=1)
@@ -52,45 +52,79 @@ class SensorLayer:
         zi_lp = lfilter_zi(self.b_lp, self.a_lp)
         self.z_lp = np.repeat(zi_lp[:, np.newaxis], self.num_eeg_channels, axis=1)
         
-        # 2. Notch Filter 50Hz (Egypt power grid)
         self.b50, self.a50 = iirnotch(50.0, 30.0, fs=self.sampling_rate)
         zi50 = lfilter_zi(self.b50, self.a50)
         self.z50 = np.repeat(zi50[:, np.newaxis], self.num_eeg_channels, axis=1)
 
-    def start(self):
+    async def start(self):
+        """Attempts direct board connection, falls back to LSL if device is busy."""
         try:
+            logger.info("Attempting direct connection to Unicorn headset...")
             self.board.prepare_session()
             self.board.start_stream(4096, '')
             logger.info("SensorLayer successfully connected to Unicorn and started streaming.")
         except Exception as e:
-            logger.error(f"Failed to start SensorLayer: {e}")
-            logger.error("NOTE: On Linux, ensure the device isn't busy. If running via Bluetooth, assure your user is in the 'dialout' group.")
-            raise
+            logger.warning(f"Direct connection failed: {e}")
+            logger.info("Switching to LSL Fallback Mode. Searching for 'UnicornMint' stream...")
+            
+            streams = resolve_byprop('name', 'UnicornMint', timeout=5.0)
+            if streams:
+                try:
+                    temp_inlet = StreamInlet(streams[0])
+                    # pylsl pull_sample returns empty lists/None on timeout, it does not raise an exception
+                    sample, timestamp = temp_inlet.pull_sample(timeout=1.0)
+                    if not sample or not timestamp or timestamp == 0.0:
+                        raise RuntimeError("pull_sample timed out, stream is dead.")
+                        
+                    self.inlet = temp_inlet
+                    self.is_lsl_mode = True
+                    logger.info("✅ Fallback Successful: Connected to LSL stream 'UnicornMint'.")
+                    return
+                except Exception as e_lsl:
+                    logger.warning(f"Found LSL stream, but it appears dead (zombie): {e_lsl}")
+                    
+            # If we get here, both direct and LSL failed
+            err_msg = "No Unicorn headset OR active LSL stream found!"
+            logger.error(f"❌ {err_msg}")
+            
+            # Emit error directly to the dashboard if socket is available
+            if self.sio and self.sio.connected:
+                import asyncio
+                await self.sio.emit('engine_fatal_error', {'msg': err_msg})
+                await asyncio.sleep(0.5) # Give the network time to send the packet before we crash
+                
+            raise RuntimeError("Could not establish data source.")
 
     def stop(self):
-        if self.board.is_prepared():
+        if not self.is_lsl_mode and self.board.is_prepared():
             self.board.stop_stream()
             self.board.release_session()
-            logger.info("SensorLayer disconnected safely.")
+        self.inlet = None
+        logger.info("SensorLayer disconnected safely.")
 
     def get_data(self):
-        """Returns filtered EEG data chunk."""
-        num_samples = self.board.get_board_data_count()
-        if num_samples == 0:
-            return np.array([])
-            
-        data = self.board.get_board_data()
-        eeg_data = data[self.eeg_channels, :]
-        eeg_data_T = eeg_data.T # Shape (samples, channels)
+        """Returns filtered EEG data chunk from either Board or LSL."""
+        if self.is_lsl_mode:
+            # Pull whatever is available in the LSL buffer
+            chunk, timestamps = self.inlet.pull_chunk(timeout=0.0)
+            if not timestamps:
+                return np.array([])
+            # Shape: (samples, channels) -> extract first 8 EEG
+            data = np.array(chunk)[:, :self.num_eeg_channels]
+            # LSL data from main.py is ALREADY filtered (HP, LP, Notch).
+            # Applying filters again would destroy the Alpha/Beta bands.
+            return data.T
+        else:
+            num_samples = self.board.get_board_data_count()
+            if num_samples == 0:
+                return np.array([])
+            data = self.board.get_board_data()
+            eeg_data = data[self.eeg_channels, :]
+            eeg_data_T = eeg_data.T # Shape (samples, channels)
         
-        # Apply 1Hz Highpass
-        eeg_filtered, self.z_hp = lfilter(self.b_hp, self.a_hp, eeg_data_T, axis=0, zi=self.z_hp)
+            # Only filter raw board data (not pre-filtered LSL data)
+            eeg_filtered, self.z_hp = lfilter(self.b_hp, self.a_hp, eeg_data_T, axis=0, zi=self.z_hp)
+            eeg_filtered, self.z_lp = lfilter(self.b_lp, self.a_lp, eeg_filtered, axis=0, zi=self.z_lp)
+            eeg_filtered, self.z50 = lfilter(self.b50, self.a50, eeg_filtered, axis=0, zi=self.z50)
         
-        # Apply 50Hz Lowpass
-        eeg_filtered, self.z_lp = lfilter(self.b_lp, self.a_lp, eeg_filtered, axis=0, zi=self.z_lp)
-        
-        # Apply 50Hz Notch
-        eeg_filtered, self.z50 = lfilter(self.b50, self.a50, eeg_filtered, axis=0, zi=self.z50)
-        
-        # Return as (channels, samples)
-        return eeg_filtered.T
+            return eeg_filtered.T
